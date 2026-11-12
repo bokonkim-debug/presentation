@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI는 내 표정을 공감할까, 분류할까? | 고교 인공지능 기초 수업자료</title>
+  <!-- Teachable Machine 연동 라이브러리 -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-light: #eff6ff;
+      --accent: #7c3aed;
+      --accent-light: #f5f3ff;
+      --dark: #1e293b;
+      --gray: #64748b;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Malgun Gothic', sans-serif;
+      background: var(--bg);
+      color: var(--dark);
+      line-height: 1.65;
+    }
+    /* 상단 네비게이션 */
+    header {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+      padding: 0.85rem 1.5rem;
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;
+    }
+    .brand { font-weight: 800; font-size: 1.05rem; color: var(--primary); }
+    .brand span { color: var(--dark); font-weight: 600; font-size: 0.9rem; margin-left: 0.4rem; }
+    .nav-controls { display: flex; align-items: center; gap: 0.75rem; }
+    .nav-links a {
+      text-decoration: none; color: var(--gray); font-size: 0.9rem; font-weight: 600; margin-right: 0.8rem;
+    }
+    .nav-links a:hover { color: var(--primary); }
+    .toggle-btn {
+      background: var(--accent-light); color: var(--accent);
+      border: 1.5px solid var(--accent); border-radius: 999px;
+      padding: 0.4rem 0.9rem; font-size: 0.85rem; font-weight: 700; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .toggle-btn.active { background: var(--accent); color: #fff; }
+
+    /* 발표자(대학원) 모드 이론 노트 */
+    .presenter-note {
+      display: none;
+      background: var(--accent-light);
+      border-left: 4px solid var(--accent);
+      padding: 1rem 1.2rem;
+      margin: 1rem 0;
+      border-radius: 0 8px 8px 0;
+      font-size: 0.92rem;
+    }
+    body.presenter-mode .presenter-note { display: block; }
+    .presenter-badge {
+      display: inline-block; background: var(--accent); color: #fff;
+      font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 4px; margin-bottom: 0.4rem;
+    }
+
+    /* 메인 컨테이너 */
+    main { max-width: 960px; margin: 0 auto; padding: 2rem 1.2rem 5rem; }
+    .hero {
+      background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+      color: #fff; padding: 2.5rem 2rem; border-radius: 16px; margin-bottom: 2rem;
+      box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.25);
+    }
+    .hero-tag {
+      display: inline-block; background: rgba(255,255,255,0.2);
+      padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.82rem; font-weight: 600; margin-bottom: 0.8rem;
+    }
+    .hero h1 { font-size: 1.85rem; line-height: 1.3; margin-bottom: 0.8rem; }
+    .hero p { opacity: 0.92; font-size: 1rem; max-width: 720px; }
+
+    section {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 1.8rem; margin-bottom: 1.8rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+    }
+    h2 { font-size: 1.35rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem; }
+    .step-num {
+      background: var(--primary); color: #fff; width: 28px; height: 28px;
+      border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.9rem;
+    }
+    .subtitle { color: var(--gray); font-size: 0.95rem; margin-bottom: 1.2rem; }
+
+    /* STEP 1: CNN 파이프라인 & 시뮬레이터 */
+    .pipeline {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 0.8rem; margin: 1.2rem 0;
+    }
+    .pipe-box {
+      background: var(--primary-light); border: 1px solid #bfdbfe;
+      padding: 1rem; border-radius: 10px; text-align: center;
+    }
+    .pipe-box strong { display: block; color: var(--primary); margin-bottom: 0.3rem; }
+    .scenario-btns { display: flex; gap: 0.6rem; flex-wrap: wrap; margin: 1rem 0; }
+    .sc-btn {
+      padding: 0.6rem 1rem; border: 1.5px solid var(--border); background: #fff;
+      border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 0.9rem;
+    }
+    .sc-btn.active { border-color: var(--primary); background: var(--primary-light); color: var(--primary); }
+    .sim-result {
+      display: grid; grid-template-columns: 1fr 1.3fr; gap: 1.2rem;
+      background: #f1f5f9; padding: 1.2rem; border-radius: 10px; align-items: center;
+    }
+    @media (max-width: 680px) { .sim-result { grid-template-columns: 1fr; } }
+    .face-card {
+      background: #fff; padding: 1.2rem; border-radius: 10px; text-align: center; border: 1px solid var(--border);
+    }
+    .face-emoji { font-size: 3.5rem; display: block; margin-bottom: 0.5rem; }
+    .bar-wrap { margin-bottom: 0.6rem; }
+    .bar-label { display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 600; }
+    .bar-bg { background: #cbd5e1; height: 10px; border-radius: 999px; overflow: hidden; margin-top: 0.2rem; }
+    .bar-fill { height: 100%; background: var(--primary); transition: width 0.4s ease; }
+    .context-box {
+      margin-top: 0.8rem; padding: 0.75rem; background: #fffbeb;
+      border: 1px solid #fde68a; border-radius: 8px; font-size: 0.88rem; color: #92400e;
+    }
+
+    /* STEP 2: 티처블머신 연동 */
+    .tm-controls { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .tm-input {
+      flex: 1; min-width: 240px; padding: 0.6rem 0.8rem;
+      border: 1px solid var(--border); border-radius: 8px; font-size: 0.9rem;
+    }
+    .btn-primary {
+      background: var(--primary); color: #fff; border: none;
+      padding: 0.6rem 1.1rem; border-radius: 8px; font-weight: 700; cursor: pointer;
+    }
+    .btn-primary:hover { background: #1d4ed8; }
+    .tm-stage {
+      display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: center;
+      background: #f8fafc; border: 1px dashed #cbd5e1; padding: 1.2rem; border-radius: 10px;
+    }
+    #webcam-container canvas { border-radius: 8px; border: 2px solid var(--primary); }
+
+    /* STEP 3: 윤리 카드 그리드 */
+    .ethics-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem;
+    }
+    .ethics-card {
+      border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem; background: #fff;
+    }
+    .ethics-card .tag {
+      font-size: 0.75rem; font-weight: 700; color: var(--primary);
+      background: var(--primary-light); padding: 0.2rem 0.5rem; border-radius: 4px;
+    }
+    .ethics-card h3 { font-size: 1.05rem; margin: 0.5rem 0; }
+    .ethics-card p { font-size: 0.88rem; color: #475569; }
+
+    /* STEP 4: 토의 및 투표 */
+    .poll-options { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 1rem; }
+    .poll-btn {
+      text-align: left; padding: 0.8rem 1rem; border: 1.5px solid var(--border);
+      background: #fff; border-radius: 8px; cursor: pointer; font-weight: 600;
+    }
+    .poll-btn:hover { border-color: var(--primary); background: var(--primary-light); }
+    .poll-feedback {
+      display: none; margin-top: 1rem; padding: 1rem;
+      background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; font-size: 0.92rem;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="brand">AI 기초 융합수업 <span>| Ⅲ. 사회적 영향 · Ⅳ. 프로젝트</span></div>
+  <div class="nav-controls">
+    <nav class="nav-links">
+      <a href="#step1">1. CNN 원리</a>
+      <a href="#step2">2. 감정분류 실습</a>
+      <a href="#step3">3. 윤리·편향</a>
+      <a href="#step4">4. 공감 토의</a>
+    </nav>
+    <button id="presenterToggle" class="toggle-btn" onclick="togglePresenterMode()">
+      발표자(대학원) 모드: OFF
+    </button>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <span class="hero-tag">2022 개정 교육과정 『인공지능 기초』 × 감성컴퓨팅</span>
+    <h1>AI는 내 표정을 '공감'할까,<br>수학적으로 '분류'할까?</h1>
+    <p>합성곱 신경망(CNN)이 인간의 감정을 인식하는 원리를 탐구하고, 감성 인공지능 시대에 필요한 윤리적 기준과 인간 고유의 공감 능력을 함께 생각해 봅시다.</p>
+  </div>
+
+  <div class="presenter-note">
+    <span class="presenter-badge">대학원 발표 브리핑 | 수업 설계 의도</span>
+    <p><strong>• 교육과정 연계:</strong> 2022 개정 『인공지능 기초』 Ⅲ단원(인공지능 윤리·사회 변화)과 Ⅳ단원(SDGs 프로젝트의 '문제 공감')을 결합했습니다.<br>
+    <strong>• 이론적 핵심:</strong> Rosalind Picard의 감성컴퓨팅(Affective Computing) 개념을 고등학생 눈높이로 재구성하여, AI의 <em>패턴 기반 감정 분류(Classification)</em>와 인간의 <em>맥락적·정서적 공감(Affective Empathy)</em>의 차이를 체득하게 합니다.</p>
+  </div>
+
+  <!-- STEP 1 -->
+  <section id="step1">
+    <h2><span class="step-num">1</span> CNN은 사람의 얼굴에서 무엇을 볼까?</h2>
+    <p class="subtitle">인공지능은 마음을 느끼지 못합니다. 대신 이미지를 숫자(픽셀)로 바꾸어 표정의 특징을 확률로 계산합니다.</p>
+
+    <div class="pipeline">
+      <div class="pipe-box">
+        <strong>① 입력 (Input)</strong>
+        얼굴 사진을 가로×세로 픽셀 밝기 숫자 행렬로 변환
+      </div>
+      <div class="pipe-box">
+        <strong>② 특징 추출 (CNN 필터)</strong>
+        눈썹 기울기, 눈 크기, 입꼬리 올라감 등 경계선 포착
+      </div>
+      <div class="pipe-box">
+        <strong>③ 분류 (Classification)</strong>
+        학습된 데이터와 비교해 가장 확률 높은 감정 라벨 출력
+      </div>
+    </div>
+
+    <p style="font-weight:700; margin-top:1rem;">👇 아래 상황을 클릭해 CNN의 예측 결과와 실제 사람의 마음을 비교해 보세요!</p>
+    <div class="scenario-btns">
+      <button class="sc-btn active" onclick="setScenario(0, this)">상황 A: 합격 소식을 들은 표정</button>
+      <button class="sc-btn" onclick="setScenario(1, this)">상황 B: 슬픔을 감추려 억지로 웃는 표정</button>
+      <button class="sc-btn" onclick="setScenario(2, this)">상황 C: 코딩 오류를 찾으려 집중한 표정</button>
+    </div>
+
+    <div class="sim-result">
+      <div class="face-card">
+        <span id="sim-emoji" class="face-emoji">😄</span>
+        <strong id="sim-title">상황 A: 합격 소식을 들은 표정</strong>
+        <p id="sim-feature" style="font-size:0.85rem; color:#64748b; margin-top:0.3rem;">특징: 입꼬리 상승 + 눈가 주름 형성</p>
+      </div>
+      <div>
+        <div class="bar-wrap">
+          <div class="bar-label"><span>기쁨 (Happy)</span><span id="prob-happy">94%</span></div>
+          <div class="bar-bg"><div id="bar-happy" class="bar-fill" style="width:94%"></div></div>
+        </div>
+        <div class="bar-wrap">
+          <div class="bar-label"><span>슬픔 (Sad)</span><span id="prob-sad">2%</span></div>
+          <div class="bar-bg"><div id="bar-sad" class="bar-fill" style="width:2%"></div></div>
+        </div>
+        <div class="bar-wrap">
+          <div class="bar-label"><span>분노/긴장 (Angry)</span><span id="prob-angry">4%</span></div>
+          <div class="bar-bg"><div id="bar-angry" class="bar-fill" style="width:4%"></div></div>
+        </div>
+        <div id="sim-context" class="context-box">
+          <strong>💡 사람의 공감 해석:</strong> 기쁜 소식에 진심으로 환하게 웃고 있어 AI 분류와 실제 감정이 일치합니다.
+        </div>
+      </div>
+    </div>
+
+    <div class="presenter-note">
+      <span class="presenter-badge">이론 포인트 | 인지적 분류 vs 정서적 공감</span>
+      <p>상황 B(억지웃음)와 상황 C(몰입)는 감성컴퓨팅의 한계인 <strong>맥락 부재(Context Blindness)</strong>를 보여줍니다. CNN은 표면적 표정(Facial Expression)을 기하학적 특징으로 '분류'할 뿐, 발화자의 내면 상태와 사회적 맥락을 '이해'하지 못합니다.</p>
+    </div>
+  </section>
+
+  <!-- STEP 2 -->
+  <section id="step2">
+    <h2><span class="step-num">2</span> 실시간 체험: 티처블머신 감정 분류기</h2>
+    <p class="subtitle">교과서 194쪽 프로젝트처럼 직접 학습시킨 티처블머신(Teachable Machine) 모델 URL을 넣어 테스트해 봅시다.</p>
+
+    <div class="tm-controls">
+      <input type="text" id="tm-url" class="tm-input" placeholder="https://teachablemachine.withgoogle.com/models/모델ID/" />
+      <button class="btn-primary" onclick="initTeachableMachine()">웹캠 모델 실행</button>
+    </div>
+
+    <div class="tm-stage">
+      <div id="webcam-container" style="min-width:200px; min-height:150px; display:flex; align-items:center; justify-content:center; background:#e2e8f0; border-radius:8px; color:#475569; font-size:0.85rem; padding:1rem;">
+        모델 URL 입력 후 [웹캠 모델 실행]을 누르세요.
+      </div>
+      <div id="label-container" style="flex:1; min-width:220px;">
+        <p style="font-weight:700; margin-bottom:0.5rem;">📊 실시간 분류 확률 및 오작동 관찰 미션</p>
+        <ul style="font-size:0.88rem; color:#475569; padding-left:1.2rem;">
+          <li>안경을 쓰거나 손으로 입을 가렸을 때 확률이 어떻게 변하나요?</li>
+          <li>조명이 어두워지거나 고개를 기울이면 AI가 감정을 잘 맞히나요?</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 3 -->
+  <section id="step3">
+    <h2><span class="step-num">3</span> 감성 인공지능의 윤리적 쟁점</h2>
+    <p class="subtitle">교과서 Ⅲ단원(181~190쪽)과 Ⅳ단원(218쪽)의 핵심 기준으로 감정 인식 AI를 점검해 봅시다.</p>
+
+    <div class="ethics-grid">
+      <div class="ethics-card">
+        <span class="tag">공정성 · 데이터 편향 (181쪽)</span>
+        <h3>모든 문화권의 표정을 공평하게 읽을까?</h3>
+        <p>특정 인종·문화권 데이터만 학습하면 다른 문화의 감정 표현을 오독합니다. 부정적 데이터만 학습해 왜곡된 해석을 내놓은 AI <strong>'노먼(Norman)'</strong>과 <strong>'Gender Shades'</strong> 사례처럼 데이터 다양성이 필수입니다.</p>
+      </div>
+      <div class="ethics-card">
+        <span class="tag">투명성 · XAI (183쪽)</span>
+        <h3>AI는 왜 나를 '우울함'으로 판단했을까?</h3>
+        <p>딥러닝 모델은 판단 근거를 알기 어려운 <strong>블랙박스</strong>입니다. 학생 상담이나 채용 면접에 쓰일 때는 어떤 특징을 근거로 감정을 판별했는지 설명하는 <strong>설명 가능한 AI(XAI)</strong>가 필요합니다.</p>
+      </div>
+      <div class="ethics-card">
+        <span class="tag">안전성 · 법적 규제 (189쪽)</span>
+        <h3>유럽 연합(EU) AI 법안의 분류 기준</h3>
+        <p>EU 인공지능 규제 법안은 <strong>'생체 인식 분류 및 감정 인식 시스템'</strong>을 <strong>'제한된 위험'</strong> 단계로 규정하여, 사용자가 AI와 상호작용 중임을 명확히 알리는 투명성 의무를 부과합니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 4 -->
+  <section id="step4">
+    <h2><span class="step-num">4</span> 토의 및 IV단원 프로젝트 연결</h2>
+    <p class="subtitle">교과서 170쪽 '인간과 AI의 협업'과 205쪽 'SDGs 문제 정의의 공감'을 바탕으로 내 생각을 선택해 봅시다.</p>
+
+    <p style="font-weight:700;">Q. 학교 상담실에 '학생 표정·음성 감정 분석 AI'가 도입된다면 어떤 방식이 가장 바람직할까요?</p>
+    <div class="poll-options">
+      <button class="poll-btn" onclick="selectPoll(1)">① AI가 학생의 감정을 분석해 상담부터 처방까지 전담한다.</button>
+      <button class="poll-btn" onclick="selectPoll(2)">② AI는 위기 징후 데이터 분석만 보조하고, 심층 공감과 상담은 교사가 맡는다.</button>
+      <button class="poll-btn" onclick="selectPoll(3)">③ 감정 오독과 사생활 침해 위험이 크므로 학교 내 도입을 전면 금지한다.</button>
+    </div>
+
+    <div id="poll-feedback" class="poll-feedback"></div>
+
+    <div class="presenter-note">
+      <span class="presenter-badge">결론 제언 | AI의 공감이 아닌 '인간의 공감'으로 설계하는 AI</span>
+      <p>교과서 Ⅳ단원 205쪽(지속가능발전목표 프로젝트)은 <strong>"상대방의 입장이 되어 문제에 공감하기"</strong>에서 출발합니다. 인공지능 교육의 목표는 AI에게 가짜 감정을 이식하는 것이 아니라, 소외된 이웃의 아픔에 공감하며 기술을 정의롭게 활용하는 인간을 기르는 데 있습니다.</p>
+    </div>
+  </section>
+</main>
+
+<script>
+  // 발표자 모드 토글
+  function togglePresenterMode() {
+    document.body.classList.toggle('presenter-mode');
+    const btn = document.getElementById('presenterToggle');
+    const isOn = document.body.classList.contains('presenter-mode');
+    btn.textContent = `발표자(대학원) 모드: ${isOn ? 'ON' : 'OFF'}`;
+    btn.classList.toggle('active', isOn);
+  }
+
+  // STEP 1 시뮬레이터 데이터
+  const scenarios = [
+    {
+      emoji: '😄',
+      title: '상황 A: 합격 소식을 들은 표정',
+      feature: '특징: 입꼬리 상승 + 눈가 주름 형성',
+      happy: 94, sad: 2, angry: 4,
+      context: '<strong>💡 사람의 공감 해석:</strong> 기쁜 소식에 진심으로 환하게 웃고 있어 AI의 픽셀 분류와 실제 감정이 일치합니다.'
+    },
+    {
+      emoji: '🥲',
+      title: '상황 B: 슬픔을 감추려 억지로 웃는 표정',
+      feature: '특징: 눈물이 고였으나 입꼬리가 올라감',
+      happy: 88, sad: 9, angry: 3,
+      context: '<strong>⚠️ AI의 한계(맥락 오독):</strong> AI는 올라간 입꼬리 픽셀 때문에 "88% 기쁨"으로 분류하지만, 사람은 눈빛과 상황을 보고 슬픔에 공감합니다.'
+    },
+    {
+      emoji: '🧐',
+      title: '상황 C: 코딩 오류를 찾으려 집중한 표정',
+      feature: '특징: 미간이 좁혀지고 입술이 굳게 다물어짐',
+      happy: 5, sad: 14, angry: 81,
+      context: '<strong>⚠️ AI의 한계(표정 편향):</strong> 화가 난 것이 아니라 문제 해결에 몰입한 상태지만, CNN은 찌푸린 미간 때문에 "81% 분노"로 오판합니다.'
+    }
+  ];
+
+  function setScenario(idx, btnEl) {
+    document.querySelectorAll('.sc-btn').forEach(b => b.classList.remove('active'));
+    btnEl.classList.add('active');
+    const s = scenarios[idx];
+    document.getElementById('sim-emoji').textContent = s.emoji;
+    document.getElementById('sim-title').textContent = s.title;
+    document.getElementById('sim-feature').textContent = s.feature;
+    document.getElementById('prob-happy').textContent = s.happy + '%';
+    document.getElementById('bar-happy').style.width = s.happy + '%';
+    document.getElementById('prob-sad').textContent = s.sad + '%';
+    document.getElementById('bar-sad').style.width = s.sad + '%';
+    document.getElementById('prob-angry').textContent = s.angry + '%';
+    document.getElementById('bar-angry').style.width = s.angry + '%';
+    document.getElementById('sim-context').innerHTML = s.context;
+  }
+
+  // STEP 2 Teachable Machine 실행 함수
+  let model, webcam, labelContainer, maxPredictions;
+  async function initTeachableMachine() {
+    let url = document.getElementById('tm-url').value.trim();
+    if (!url) {
+      alert('티처블머신에서 내보내기(Export)한 모델 공유 URL을 입력해 주세요!');
+      return;
+    }
+    if (!url.endsWith('/')) url += '/';
+    const modelURL = url + 'model.json';
+    const metadataURL = url + 'metadata.json';
+
+    try {
+      model = await tmImage.load(modelURL, metadataURL);
+      maxPredictions = model.getTotalClasses();
+      webcam = new tmImage.Webcam(220, 220, true);
+      await webcam.setup();
+      await webcam.play();
+      window.requestAnimationFrame(loop);
+
+      const wcContainer = document.getElementById('webcam-container');
+      wcContainer.innerHTML = '';
+      wcContainer.style.padding = '0';
+      wcContainer.appendChild(webcam.canvas);
+
+      labelContainer = document.getElementById('label-container');
+      labelContainer.innerHTML = '<p style="font-weight:700; margin-bottom:0.5rem;">실시간 CNN 감정 분류 확률:</p>';
+      for (let i = 0; i < maxPredictions; i++) {
+        labelContainer.appendChild(document.createElement('div'));
+      }
+    } catch (e) {
+      alert('모델을 불러오지 못했습니다. URL 주소와 웹캠 권한을 확인해 주세요.');
+    }
+  }
+
+  async function loop() {
+    webcam.update();
+    await predict();
+    window.requestAnimationFrame(loop);
+  }
+
+  async function predict() {
+    const prediction = await model.predict(webcam.canvas);
+    for (let i = 0; i < maxPredictions; i++) {
+      const prob = (prediction[i].probability * 100).toFixed(1);
+      labelContainer.childNodes[i + 1].innerHTML =
+        `<div style="margin-bottom:6px;"><strong>${prediction[i].className}</strong>: ${prob}%
+         <div style="background:#e2e8f0; height:8px; border-radius:4px;">
+           <div style="background:#2563eb; height:100%; width:${prob}%; border-radius:4px;"></div>
+         </div></div>`;
+    }
+  }
+
+  // STEP 4 토의 피드백
+  function selectPoll(choice) {
+    const fb = document.getElementById('poll-feedback');
+    fb.style.display = 'block';
+    const messages = {
+      1: '<strong>비판적 검토:</strong> AI는 맥락 없는 감정 오독과 개인정보 유출 위험이 있어 전담 상담에는 한계가 있습니다. (교과서 178·183쪽 참조)',
+      2: '<strong>인간-AI 협업 관점:</strong> 교과서 170쪽 의료 협업 사례처럼 데이터 분석은 AI가 보조하고, 진정한 정서적 공감과 관계 형성은 교사가 수행하는 이상적인 모델입니다.',
+      3: '<strong>신중한 접근:</strong> EU AI 법안에서도 감정 인식 시스템은 민감한 기본권 침해 우려로 엄격한 투명성 규제를 적용합니다. (교과서 189쪽 참조)'
+    };
+    fb.innerHTML = messages[choice];
+  }
+</script>
+</body>
+</html>
